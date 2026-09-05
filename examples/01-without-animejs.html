@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>anime.js を使わない three.js アニメーション</title>
+  <style>
+    body {
+      margin: 0;
+      overflow: hidden;
+      background: #111;
+    }
+  </style>
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://unpkg.com/three@0.184.0/build/three.module.js"
+    }
+  }
+  </script>
+</head>
+<body>
+  <script type="module">
+    import * as THREE from 'three';
+
+    // --- three.js の基本セットアップ（両ファイル共通） ---
+    const scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 100);
+    camera.position.z = 5;
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    document.body.appendChild(renderer.domElement);
+
+    scene.add(new THREE.AmbientLight(0xffffff, 1.2));
+    const light = new THREE.DirectionalLight(0xffffff, 1.5);
+    light.position.set(2, 2, 3);
+    scene.add(light);
+
+    const mesh = new THREE.Mesh(
+      new THREE.BoxGeometry(1.2, 1.2, 1.2),
+      new THREE.MeshStandardMaterial({ color: 0x818cf8, transparent: true }),
+    );
+    scene.add(mesh);
+
+    // アニメーションする属性:
+    // (1) mesh.position.x: X方向への移動
+    // (2) mesh.rotation.y: Y軸回転
+    // (3) mesh.material.opacity: 不透明度の変化
+    //
+    // anime.js の animate(mesh, {...}) が肩代わりしてくれる処理を、
+    // すべて手動の requestAnimationFrame とイージング関数で再現する。
+    const duration = 1500; // ms（往路の1周期）
+
+    function easeInOutSine(t) {
+      return -(Math.cos(Math.PI * t) - 1) / 2;
+    }
+
+    let startTime = null;
+    function animateLoop(timestamp) {
+      if (startTime === null) startTime = timestamp;
+      const elapsed = timestamp - startTime;
+
+      const cyclePos = elapsed % (duration * 2);
+      const t = cyclePos < duration
+        ? cyclePos / duration
+        : 1 - (cyclePos - duration) / duration;
+      const p = easeInOutSine(t);
+
+      mesh.position.x = -2 + 4 * p; // (1)
+      mesh.rotation.y = p * Math.PI * 2; // (2)
+      mesh.material.opacity = 0.7 + 0.3 * p; // (3)
+
+      requestAnimationFrame(animateLoop);
+    }
+    requestAnimationFrame(animateLoop);
+
+    // --- 描画ループ（両ファイル共通） ---
+    function renderLoop() {
+      requestAnimationFrame(renderLoop);
+      renderer.render(scene, camera);
+    }
+    renderLoop();
+
+    window.addEventListener('resize', () => {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+  </script>
+</body>
+</html>
