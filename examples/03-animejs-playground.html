@@ -5,39 +5,111 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Start Page</title>
   <style>
+    /* ==========================================================
+       ★ FORM THEME（検索フォームのテーマ）… 触る場所
+       白 × 紺の配色
+       ========================================================== */
+    :root {
+      /* --- 基準になる 2 色（触るのは基本ここだけ） ---
+         強調色は「R G B の数値」だけを持たせておく。
+         こうしておくと rgb(... / 不透明度) の形で濃さ違いを作れるので、
+         --form-accent-rgb を変えればふち・文字・発光がまとめて追従する */
+      --form-accent-rgb: 27 42 74; /* 強調色 = 紺 #1B2A4A */
+      --form-base: #ffffff; /* 下地の色 = 白。入力欄の背景とボタンの文字色に使う */
+
+      /* --- 派生色 ---
+         rgb(R G B / A) の A は不透明度（0〜1）。
+         A を下げるほど背景に溶けて淡く見える。
+         数値を変えれば濃さだけを調整できる */
+
+      --form-accent: rgb(var(--form-accent-rgb)); /* そのままの強調色 */
+
+      /* 通常時のふち・プレースホルダー用に、濃さを落とした強調色 */
+      --form-accent-dim: rgb(var(--form-accent-rgb) / 0.55);
+
+      /* 発光（box-shadow）の色 */
+      --form-glow: rgb(var(--form-accent-rgb) / 0.35);
+      --form-glow-strong: rgb(var(--form-accent-rgb) / 0.45);
+
+      /* 発光のぼかし幅 */
+      --form-glow-blur: 12px;
+      --form-glow-blur-strong: 14px;
+
+      /* 入力欄の下地 */
+      --form-field-bg: var(--form-base);
+
+      --form-radius: 4px;
+
+      /* 画面全体の背景色 */
+      --form-page-bg: var(--form-base);
+    }
+
+    /* ----------------------------------------------------------
+       LAYOUT（土台）
+       ---------------------------------------------------------- */
+
+    /* 検索フォームを画面の中央に置く */
     body {
       margin: 0;
       min-height: 100vh;
       display: flex;
       align-items: center;
       justify-content: center;
+      background: var(--form-page-bg);
     }
 
+    /* ----------------------------------------------------------
+       SEARCH FORM（検索フォーム）
+       ---------------------------------------------------------- */
+
     form {
+      position: relative;
+      z-index: 1;
       display: flex;
       gap: 8px;
     }
 
     input[type="text"] {
-      width: 320px;
+      width: min(320px, 60vw);
       padding: 10px 14px;
       font-size: 16px;
-      border: 1px solid #999;
-      border-radius: 4px;
+      color: var(--form-accent);
+      background: var(--form-field-bg);
+      border: 1px solid var(--form-accent-dim);
+      border-radius: var(--form-radius);
+      outline: none;
+      transition: border-color 0.2s, box-shadow 0.2s;
+    }
+
+    input[type="text"]::placeholder {
+      color: var(--form-accent-dim);
+    }
+
+    /* フォーカス時はふちを強調色にして、外側にほのかな発光を足す */
+    input[type="text"]:focus {
+      border-color: var(--form-accent);
+      box-shadow: 0 0 var(--form-glow-blur) var(--form-glow);
     }
 
     button {
       padding: 10px 20px;
       font-size: 16px;
+      color: var(--form-base);
+      background: var(--form-accent);
       border: none;
-      border-radius: 4px;
-      background: #1B2A4A;
-      color: #fff;
+      border-radius: var(--form-radius);
       cursor: pointer;
+      transition: box-shadow 0.2s, filter 0.2s;
+    }
+
+    button:hover {
+      filter: brightness(1.15);
+      box-shadow: 0 0 var(--form-glow-blur-strong) var(--form-glow-strong);
     }
   </style>
 </head>
 <body>
+  <!-- ---- 検索フォーム ---- -->
   <form action="https://www.google.com/search" method="GET">
     <input type="text" name="q" placeholder="Google検索" autofocus>
     <button type="submit">検索</button>
