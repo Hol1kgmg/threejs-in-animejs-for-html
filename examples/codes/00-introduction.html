@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>anime.js Introduction</title>
+  <style>
+    body {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      height: 100vh;
+      margin: 0;
+      background: #111;
+      font-family: system-ui, sans-serif;
+    }
+
+    .demo {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      grid-template-rows: auto auto;
+      align-items: center;
+      column-gap: 48px;
+      row-gap: 32px;
+    }
+
+    .demo__label {
+      grid-row: 1;
+      margin: 0;
+      color: #9aa4b2;
+      font-size: 13px;
+      font-weight: 600;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+
+    .demo__stage {
+      grid-row: 2;
+      display: flex;
+      align-items: center;
+      height: 80px;
+    }
+
+    .demo__code {
+      grid-row: 3;
+      align-self: start;
+    }
+
+    .box {
+      width: 80px;
+      height: 80px;
+      background: #4f46e5;
+      border-radius: 12px;
+    }
+
+    pre {
+      margin: 0;
+      border: 1px solid #30363d;
+      border-radius: 8px;
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+      font-size: 14px;
+      overflow: hidden;
+    }
+
+    pre code.hljs {
+      padding: 16px 20px;
+      background: #1b2027;
+    }
+  </style>
+
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+  <script>hljs.highlightAll();</script>
+</head>
+<body>
+  <div class="demo">
+    <p class="demo__label">HTML + CSS</p>
+    <p class="demo__label">+ anime.js</p>
+
+    <div class="demo__stage">
+      <div class="box box--static"></div>
+    </div>
+    <div class="demo__stage">
+      <div class="box box--animated"></div>
+    </div>
+
+    <pre class="demo__code"><code class="language-html">&lt;div class="box"&gt;&lt;/div&gt;
+
+&lt;style&gt;
+  .box {
+    width: 80px;
+    height: 80px;
+    background: #4f46e5;
+    border-radius: 12px;
+  }
+&lt;/style&gt;
+</code></pre>
+
+    <pre class="demo__code"><code class="language-html">&lt;div class="box"&gt;&lt;/div&gt;
+
+&lt;style&gt;
+  .box {
+    width: 80px;
+    height: 80px;
+    background: #4f46e5;
+    border-radius: 12px;
+  }
+&lt;/style&gt;
+
+&lt;script type="module"&gt;
+  import { animate } from 'animejs';
+
+  animate('.box', {
+    translateX: 250,
+    loop: true,
+    alternate: true,
+  });
+&lt;/script&gt;
+</code></pre>
+  </div>
+
+  <script type="module">
+    import { animate } from 'https://cdn.jsdelivr.net/npm/animejs@4.5/+esm';
+
+    animate('.box--animated', {
+      translateX: 250,
+      loop: true,
+      alternate: true,
+    });
+  </script>
+</body>
+</html>
