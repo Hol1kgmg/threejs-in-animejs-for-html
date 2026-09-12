@@ -3,18 +3,17 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Start Page</title>
+  <title>Start Page (3D)</title>
   <style>
     /* ==========================================================
        ★ THEME（テーマ）… 触る場所
        見た目の調整はここだけ触れば OK
        ========================================================== */
     :root {
-      /* 魔法陣全体の大きさ。
-         min(A, B) は「A と B の小さい方」を採用する書き方。
-         90vmin = 画面の短い辺の 90% なので、縦長・横長どちらでもはみ出さない。
-         1000px = どんなに画面が大きくてもこれ以上は大きくしない上限 */
-      --sigil-size: min(90vmin, 1000px);
+      /* 魔法陣全体の大きさは、この 3D 版では CSS ではなく
+         JS の CONTROL PANEL にある CAMERA.screenRatio で決まる。
+         （3 層を奥行き方向に離して並べるため、画面に映る大きさは
+          「レイヤーの寸法」ではなく「カメラの距離」で決まるから） */
 
       /* 背景色（画面全体） */
       --sigil-bg: #0b0b10;
@@ -94,10 +93,10 @@
 
     /* ----------------------------------------------------------
        LAYOUT（土台）… 触らない場所
-       3 層を中央に重ねて正方形に保つための骨組み
+       3 層を 3D 空間に置くための骨組み
        ---------------------------------------------------------- */
 
-    /* 検索フォームを画面の中央に置く。魔法陣は下の #sigil-stack で
+    /* 検索フォームを画面の中央に置く。魔法陣は下の #sigil-stage で
        画面全体に固定するので、ここでの中央寄せはフォームのためのもの */
     body {
       margin: 0;
@@ -109,35 +108,47 @@
       background: var(--sigil-bg);
     }
 
-    /* 3 層を同じ中心（同じ軸）に重ねるためのスタック。
-       position: fixed + inset: 0 + margin: auto で画面中央に固定する。
+    /* CSS3DRenderer が作る描画用の DOM を入れておく箱。
+       2D 版の #sigil-stack が「3 層を CSS で重ねる場所」だったのに対し、
+       こちらは「three.js に明け渡す場所」で、中身の配置は JS が全部決める。
        z-index: 0 でフォーム（z-index: 1）の背面に、
        pointer-events: none でクリックがフォームに素通りするようにする */
-    #sigil-stack {
+    #sigil-stage {
       position: fixed;
       inset: 0;
-      margin: auto;
       z-index: 0;
       pointer-events: none;
-      width: var(--sigil-size);
-      aspect-ratio: 1 / 1; /* 正方形を保つ */
     }
 
-    /* inset: 0 で 3 層すべてを親いっぱいに重ねる = 中心が完全に一致する。
+    /* SVG の置き場所（出発点）。起動時に中身は #sigil-stage 側へ移されるので、
+       ここは一瞬しか使われない。position: fixed にしてあるのは、
+       移される前の 1000px 四方のレイヤーが通常の並びに割り込んで
+       検索フォームの位置をずらしてしまうのを防ぐため */
+    #sigil-source {
+      position: fixed;
+      top: 0;
+      left: 0;
+    }
+
+    /* CSS3D の世界では「1px = 3D 空間の 1 単位」なので、
+       レイヤーは画面サイズではなく SVG の viewBox と同じ 1000px 四方に固定する。
+       画面に映る大きさは、この寸法ではなくカメラの距離（CAMERA.screenRatio）で決まる。
+
        visibility: hidden は、準備が終わるまで完成形をチラ見せしないための初期状態
        （JS 側で準備完了後に visible へ切り替える） */
-    #sigil-stack > .layer {
-      position: absolute;
-      inset: 0;
+    .layer {
+      width: 1000px;
+      height: 1000px;
       visibility: hidden;
     }
 
-    /* transform-origin で回転の軸を SVG の中心に固定する */
-    #sigil-stack svg {
+    /* 2D 版にあった transform-origin の指定はここには無い。
+       回転は CSS ではなく three.js のオブジェクト側（rotateZ）が担当するため、
+       SVG 要素に CSS transform を書くと二重にかかってしまう */
+    .layer svg {
       display: block;
       width: 100%;
       height: 100%;
-      transform-origin: 50% 50%;
     }
 
     /* ----------------------------------------------------------
@@ -194,6 +205,7 @@
   {
     "imports": {
       "three": "https://unpkg.com/three@0.184.0/build/three.module.js",
+      "three/addons/": "https://unpkg.com/three@0.184.0/examples/jsm/",
       "animejs": "https://unpkg.com/animejs@4.5.0/dist/modules/index.js",
       "animejs/adapters/three": "https://unpkg.com/animejs@4.5.0/dist/modules/adapters/three/index.js"
     }
@@ -207,13 +219,30 @@
     <button type="submit">検索</button>
   </form>
 
+  <!-- ---- 3D 空間の描画先（中身は CSS3DRenderer が作る） ---- -->
+  <div id="sigil-stage"></div>
+
 
   <script type="module">
     import { animate, svg, stagger } from 'animejs';
 
-    // three.js を使う場合は以下のコメントを外す
-    // import * as THREE from 'three';
-    // import 'animejs/adapters/three';
+    // three.js 本体から、3D 空間を組み立てるのに最低限必要な 3 つだけを取り込む。
+    //   Scene            : 物を置く「空間」そのもの
+    //   PerspectiveCamera: 遠くのものほど小さく映る、人の目に近いカメラ
+    //   Group            : 複数のオブジェクトを 1 つの塊として扱うための入れ物
+    import { Scene, PerspectiveCamera, Group } from 'three';
+
+    // CSS3DRenderer は「HTML 要素をそのまま 3D 空間に置ける」レンダラー。
+    // WebGL で絵を描き直すのではなく、CSS の transform で要素を立体的に配置する。
+    // おかげで中身の SVG は DOM のままなので、
+    // 2D 版と同じ svg.createDrawable による線画アニメーションがそのまま使える
+    import { CSS3DRenderer, CSS3DObject } from 'three/addons/renderers/CSS3DRenderer.js';
+
+    // anime.js に「three.js のオブジェクトの動かし方」を教えるアダプター。
+    // 読み込むだけで有効になるので、ここから何かを取り出して使うことはない。
+    // これ以降 animate() の対象に three.js のオブジェクトを渡せるようになり、
+    // HTML 要素に対するのと同じ書き方（x / y / z / rotateZ / scale ...）で動かせる
+    import 'animejs/adapters/three';
 
     // ==========================================================
     //
@@ -242,39 +271,83 @@
       spinEase: 'linear',
     };
 
+    // カメラと 3D 空間の設定。2D 版には無かったブロック。
+    // 「魔法陣をどこから、どのくらいの距離で覗き込むか」をここで決める
+    const CAMERA = {
+      // 視野角（度）。小さいほど望遠レンズ寄りで落ち着いた見た目になり、
+      // 大きいほど広角レンズになって奥行きの誇張が強くなる
+      fov: 35,
+
+      // 画面の短い辺に対して魔法陣をどのくらいの大きさで映すか（0〜1）。
+      // 2D 版の --sigil-size: min(90vmin, 1000px) にあたる役割。
+      // 実際にはこの値からカメラの距離を逆算している（→ resizeStage）。
+      //
+      // ※ 空間を傾けると奥のレイヤーが上へ、手前のレイヤーが下へずれるため、
+      //    見かけの縦幅は 1 枚のときより大きくなる。
+      //    tiltX や depth を大きくして画面からはみ出したら、この値を下げる
+      screenRatio: 0.78,
+
+      // 空間全体の傾き（度）。0 にすると 2D 版とほぼ同じ真正面の見た目になる。
+      //   tiltX : 上下の傾き。プラスで「上から見下ろす」
+      //   tiltY : 左右の振り。プラスで「右から回り込む」
+      tiltX: 70,
+      tiltY: 0,
+    };
+
     // レイヤーごとの設定。
     // 配列の並び順（1 番目・2 番目・3 番目）が、
     // HTML の SIGIL ARTWORK にある data-layer="1" 〜 "3" に対応する
     const LAYERS = [
       {
         // ↓ data-layer="1"（layer1-outer.svg 由来）の設定
-        order: 2,                 // 描かれる順番。0 が最初 → ここでは 3 番目に描かれる
-        startAfterPrev: 1200,     // 1 つ前のレイヤーが「描き始めて」から自分が描き始めるまでの待ち時間 (ms)
-                                  //   前のレイヤーの drawDuration より小さい → 重なりながら描かれる
-                                  //   大きい → 前が描き終わってから間を空けて描かれる
+        order: 0,                 // 描かれる順番。小さいほど先に描かれ、0 が最初
+
+        gapToNext: 1200,          // 自分が「描き始めて」から、次のレイヤーが描き始めるまでの間隔 (ms)
+                                  //   自分の drawDuration より小さい → 重なりながら描かれる
+                                  //   大きい → 自分が描き終わってから間を空けて次が描かれる
+                                  //
+                                  //   ※ 自分の開始時刻ではなく「次のレイヤーの開始時刻」を決める値。
+                                  //     order が先頭のレイヤーはページを開いた直後に描き始まり、
+                                  //     order が最後のレイヤーは「次」が無いのでこの値を使わない
+
         drawDuration: 2000,       // このレイヤーを最初から最後まで描き切るのにかかる時間 (ms)
         drawStagger: 8,           // レイヤー内の図形を 1 つずつズラして描く間隔 (ms)
                                   //   0 にすると全図形が同時に描かれる。大きいほど 1 本ずつ順に描かれる
+
         spinDuration: 40000,      // 1 回転にかかる時間 (ms)。大きいほどゆっくり回る
         spinDirection: 1,         // 回転方向。1 = 時計回り / -1 = 反時計回り
+        depth: -400,              // 奥行きの位置。2D 版には無かった設定。
+                                  //   マイナス = 奥（カメラから遠い） / プラス = 手前
+                                  //   単位は SVG の座標と同じ（魔法陣の直径が 1000）
+
+        size: 1.5,                // このレイヤーだけの拡大率。1 が元のままで、
+                                  // 下げると小さく、上げると大きくなる。
+                                  //   全レイヤーをまとめて大きくしたいときは
+                                  //   ここではなく CAMERA.screenRatio を上げる
+                                  //   ※ depth で奥に置いたレイヤーは遠近法でも小さく映るので、
+                                  //     見かけの大きさは size と depth の兼ね合いで決まる
       },
       {
         // ↓ data-layer="2"（layer2-mid.svg 由来）の設定
-        order: 1,                 // 2 番目に描かれる
-        startAfterPrev: 1000,
+        order: 1,
+        gapToNext: 1000,
         drawDuration: 1600,
         drawStagger: 30,
         spinDuration: 28000,
         spinDirection: -1,
+        depth: -330,
+        size: 1.5,
       },
       {
         // ↓ data-layer="3"（layer3-core.svg 由来）の設定
-        order: 0,                 // 最初に描かれる（内側の核から描き始める）
-        startAfterPrev: 0,        // 一番最初なので待ち時間なし
+        order: 2,
+        gapToNext: 0,
         drawDuration: 700,
         drawStagger: 40,
         spinDuration: 18000,
         spinDirection: 1,
+        depth: -260,
+        size: 1,
       },
     ];
 
@@ -285,20 +358,33 @@
     // ----------------------------------------------------------
 
     function main() {
-      // HTML 内の SVG を集めて、全レイヤーを「線の長さ 0」の状態にしてから表示する
-      const scenes = prepareLayers(collectLayers());
+      // 3D 空間（Scene / Camera / Renderer）を用意する。2D 版には無かった手順
+      const stage = setupStage();
 
-      // order の小さい順（core → mid → outer）に開始時刻を決めていく。
-      // startAfterPrev を足し算していくことで「全体の開始から何 ms 後か」という
-      // 絶対的な時刻を求め、それを使って全レイヤーを最初にまとめて仕込む。
-      // setTimeout を使わないので、タイミングのズレが積み重なることがない
+      // HTML 内の 3 枚のレイヤーを 3D 空間に置き、
+      // 全レイヤーを「線の長さ 0」の状態にしてから表示する
+      const scenes = prepareLayers(mountLayers(stage));
+
+      // 3D 空間は放っておくと 1 枚も絵が出ないので、毎フレーム描き直し続ける。
+      // anime.js が数値を変え、このループがその結果を画面に反映する、という分担
+      startRenderLoop(stage);
+
+      // ここから下は 2D 版とまったく同じ段取り
+
+      // order の小さい順に開始時刻を決めていく。
+      // 先頭のレイヤーは 0ms（＝すぐ）から始め、
+      // 自分を仕込んだあとに自分の gapToNext を足して「次のレイヤーの開始時刻」を作る。
+      // 足し算で絶対的な時刻を求めてから全レイヤーをまとめて仕込むので、
+      // setTimeout のようにタイミングのズレが積み重なることがない
       let startAt = 0;
 
       for (const scene of [...scenes].sort((a, b) => a.order - b.order)) {
-        startAt += scene.startAfterPrev;
-
         // 描き終わった（.then）レイヤーから順に、そのレイヤーだけ回転を始める
         startDrawing(scene, startAt).then(() => startSpinning(scene));
+
+        // 自分の値は自分のためではなく「次のレイヤー」のために足す。
+        // 最後のレイヤーには次が無いので、その gapToNext は使われずに終わる
+        startAt += scene.gapToNext;
       }
     }
 
@@ -321,21 +407,81 @@
     // text や image などはここに含めても動かないので除外している
     const DRAWABLE_SHAPES = 'line, circle, ellipse, rect, polygon, polyline, path';
 
+    // 魔法陣の一辺の長さ。SVG の viewBox="0 0 1000 1000" と、
+    // CSS の .layer { width: 1000px } に合わせた値。
+    // CSS3D の世界では 1px = 3D 空間の 1 単位なので、この 3 つは必ず揃える
+    const SIGIL_SIZE = 1000;
+
+    // three.js の角度はラジアン（1 周 = 2π）で指定する決まりなので、
+    // CONTROL PANEL に度で書いた値をこれで変換する。
+    // ※ anime.js の rotateZ は度のまま書ける（アダプターが変換してくれる）ので、
+    //    この関数が要るのは three.js を直接触るところだけ
+    const toRadians = (degrees) => degrees * Math.PI / 180;
+
     // ----------------------------------------------------------
     // PARTS（処理の部品）
     // ----------------------------------------------------------
 
+    // [0-a] 3D 空間をひと通り組み立てる。
+    // 戻り値: 以降の処理で使い回す { world, camera, root, renderer } の一式
+    function setupStage() {
+      // world = 物を置く空間。camera = それを覗くレンズ
+      const world = new Scene();
+      const camera = new PerspectiveCamera(CAMERA.fov, 1, 1, 10000);
+
+      // root = 3 枚のレイヤーをまとめて傾けるための入れ物。
+      // カメラの方を動かすのではなく、この塊ごと傾けることで
+      // 魔法陣の中心が画面のど真ん中から動かないようにしている
+      const root = new Group();
+      root.rotation.x = toRadians(CAMERA.tiltX);
+      root.rotation.y = toRadians(CAMERA.tiltY);
+      world.add(root);
+
+      // CSS3DRenderer は自前の div を作るので、それを #sigil-stage に差し込む
+      const renderer = new CSS3DRenderer();
+      document.querySelector('#sigil-stage').appendChild(renderer.domElement);
+
+      const stage = { world, camera, root, renderer };
+
+      // 初回のサイズ合わせと、以後のウィンドウリサイズへの追従
+      resizeStage(stage);
+      window.addEventListener('resize', () => resizeStage(stage));
+
+      return stage;
+    }
+
+    // [0-b] 画面サイズに合わせてレンダラーとカメラを調整する。
+    // 2D 版では CSS の min(90vmin, 1000px) が担っていた役割を、
+    // ここでは「カメラをどれだけ離すか」で実現している
+    function resizeStage(stage) {
+      const width = window.innerWidth;
+      const height = window.innerHeight;
+
+      stage.renderer.setSize(width, height);
+      stage.camera.aspect = width / height;
+
+      // カメラから距離 d の位置に見える縦幅は 2 * d * tan(fov / 2) で決まる。
+      // 「魔法陣（SIGIL_SIZE）を画面の短い辺の screenRatio 倍の大きさで映したい」
+      // という条件から、必要な縦幅 → 必要な距離 d の順に逆算する
+      const targetSizeOnScreen = CAMERA.screenRatio * Math.min(width, height);
+      const visibleHeight = SIGIL_SIZE * height / targetSizeOnScreen;
+      stage.camera.position.z = visibleHeight / (2 * Math.tan(toRadians(CAMERA.fov) / 2));
+
+      // fov / aspect / position を変えたら、カメラに計算し直させる必要がある
+      stage.camera.updateProjectionMatrix();
+    }
+
     // [1] HTML の SIGIL ARTWORK に書かれた SVG を集めてくる。
     // 戻り値: 各レイヤーの { el: SVG要素, host: 置き場所の div } の配列（LAYERS と同じ並び順）
     function collectLayers() {
-      const stack = document.querySelector('#sigil-stack');
+      const source = document.querySelector('#sigil-source');
 
       return LAYERS.map((layer, index) => {
         // data-layer は 1 から始まるので、配列の番号（0 始まり）に +1 する
-        const host = stack.querySelector(`.layer[data-layer="${index + 1}"]`);
+        const host = stackElement(source, index);
         const el = host.querySelector('svg');
 
-        // 親要素（#sigil-stack）のサイズに追従させるため、SVG 固有の width/height は外す
+        // 親要素（.layer）のサイズに追従させるため、SVG 固有の width/height は外す
         el.removeAttribute('width');
         el.removeAttribute('height');
 
@@ -343,18 +489,51 @@
       });
     }
 
+    // data-layer 番号で .layer の div を引く小さな部品
+    function stackElement(source, index) {
+      return source.querySelector(`.layer[data-layer="${index + 1}"]`);
+    }
+
+    // [1-b] 集めたレイヤーを 3D 空間に配置する。2D 版には無かった手順。
+    // CSS3DObject で包むと、ただの div が three.js のオブジェクトとして扱えるようになり、
+    // 位置（z）や回転（rotateZ）を 3D 空間の座標で指定できるようになる
+    function mountLayers(stage) {
+      const mounted = collectLayers().map((layer, index) => {
+        const obj = new CSS3DObject(layer.host);
+
+        // 奥行きの位置。CONTROL PANEL の depth をそのまま z 座標として使う
+        obj.position.z = LAYERS[index].depth;
+
+        // このレイヤーだけの拡大率。
+        // setScalar は「x / y / z の 3 方向に同じ値を入れる」という意味で、
+        // 縦横の比率を保ったまま大きさだけを変えられる
+        obj.scale.setScalar(LAYERS[index].size);
+
+        stage.root.add(obj);
+
+        return { ...layer, obj };
+      });
+
+      // CSS3DRenderer は「描画するとき」に要素を自分の管理下へ移す仕組みなので、
+      // 表示を有効にする（prepareLayers）より前に一度だけ描画して移動を済ませておく
+      stage.renderer.render(stage.world, stage.camera);
+
+      return mounted;
+    }
+
     // [2] 描画アニメーションの下準備。
     // 全レイヤーの図形をあらかじめ「長さ 0」にしてから表示状態へ切り替える。
     // こうしておくと、描画の順番待ちをしている間もその層の線は一切見えない
     // （先に表示してしまうと、完成形が一瞬チラッと見えてしまう）
     function prepareLayers(layers) {
-      return layers.map(({ el, host }, index) => {
+      return layers.map(({ el, host, obj }, index) => {
         const drawables = svg.createDrawable(el.querySelectorAll(DRAWABLE_SHAPES));
         drawables.forEach((drawable) => { drawable.draw = '0 0'; }); // 長さ 0 = 何も見えない状態
         host.style.visibility = 'visible';
 
-        // SVG 要素・描画対象・LAYERS の設定値をひとまとめにして扱いやすくする
-        return { el, drawables, ...LAYERS[index] };
+        // SVG 要素・3D オブジェクト・描画対象・LAYERS の設定値を
+        // ひとまとめにして扱いやすくする
+        return { el, obj, drawables, ...LAYERS[index] };
       });
     }
 
@@ -373,13 +552,31 @@
     }
 
     // [4] 中心軸まわりに回し続けるアニメーション（無限ループ）。
+    //
+    // 2D 版との違いはたった 2 箇所しかない。
+    //   - 対象が SVG 要素（scene.el）から 3D オブジェクト（scene.obj）に変わった
+    //   - プロパティ名が rotate から rotateZ に変わった（Z 軸まわりの回転、の意味）
+    // 設定値も書き方も、それ以外はそのまま通用する。
+    // これが「アダプターを読み込むだけ」で得られる恩恵
     function startSpinning(scene) {
-      animate(scene.el, {
-        rotate: scene.spinDirection * 360, // 正の値で時計回り、負の値で反時計回り
+      animate(scene.obj, {
+        rotateZ: scene.spinDirection * 360, // 正の値で時計回り、負の値で反時計回り
         duration: scene.spinDuration,
         loop: true, // 回り続ける
         ease: CONFIG.spinEase,
       });
+    }
+
+    // [5] 3D 空間を毎フレーム描き直し続ける。
+    // anime.js が動かしているのはあくまで「オブジェクトが持つ数値」なので、
+    // それを画面に反映するには、こうして描画を回し続ける必要がある
+    function startRenderLoop(stage) {
+      const tick = () => {
+        stage.renderer.render(stage.world, stage.camera);
+        requestAnimationFrame(tick); // 次のフレームでもう一度自分を呼ぶ
+      };
+
+      tick();
     }
 
     // ----------------------------------------------------------
@@ -414,10 +611,15 @@
        色を変えたいときはここではなく THEME を触る。
 
        行数がとても多いので、読みやすさのために JS より後ろに置いてある。
-       （画面上の表示位置は CSS で中央寄せしているので、この順番でも
+       （画面上の表示位置は 3D 空間側で決まるので、この順番でも
         見た目は変わらない）
+
+       この #sigil-source は「置き場所」ではなく「出発点」。
+       起動時に JS が中の .layer を拾い上げて CSS3DObject で包み、
+       CSS3DRenderer が自分の管理下（#sigil-stage の中）へ移すため、
+       画面が動き出した時点でこの div の中身は空になっている
        ========================================================== -->
-  <div id="sigil-stack">
+  <div id="sigil-source">
     <!-- ---- layer1 : layer1-outer.svg 由来 ---- -->
     <div class="layer" data-layer="1">
       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 1000" width="1000" height="1000" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" style="color: var(--sigil-ink, #c9a227)">

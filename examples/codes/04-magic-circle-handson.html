@@ -1,0 +1,705 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Start Page</title>
+  <style>
+    /* ==========================================================
+       ★ THEME（テーマ）… 触る場所
+       見た目の調整はここだけ触れば OK
+       ========================================================== */
+    :root {
+      /* 魔法陣全体の大きさ。
+         min(A, B) は「A と B の小さい方」を採用する書き方。
+         90vmin = 画面の短い辺の 90% なので、縦長・横長どちらでもはみ出さない。
+         1000px = どんなに画面が大きくてもこれ以上は大きくしない上限 */
+      --sigil-size: min(90vmin, 1000px);
+
+      /* 背景色（画面全体） */
+      --sigil-bg: #0b0b10;
+
+      /* 線の色。下の --ink-* がすべてここに行き着くので、
+         ここを変えるだけで全レイヤー・全パーツの色が一括で変わる */
+      --sigil-ink: #d2be7f;
+
+      /* 一部のパーツだけ --sigil-ink とは違う色にしたいときの、もう 1 色。
+         下のパーツ変数に var(--sigil-ink-bright) を指定して使う */
+      --sigil-ink-bright: #f38749;
+
+      /* --- レイヤー単位の色 ---
+         そのレイヤーに属するパーツをまとめて変えたいときはここ。
+         値を書き換えなければ --sigil-ink（全体の色）をそのまま受け継ぐ */
+      --ink-l1: var(--sigil-ink); /* 外周（layer1-outer.svg） */
+      --ink-l2: var(--sigil-ink); /* 中間（layer2-mid.svg） */
+      --ink-l3: var(--sigil-ink); /* 核　（layer3-core.svg） */
+
+      /* --- パーツ単位の色 ---
+         一番細かい指定。値を書き換えなければ、そのレイヤーの色
+         （--ink-l1 など）→ 全体の色（--sigil-ink）と順に遡っていく。
+         つまり「全体 → レイヤー → パーツ」の 3 段階で、
+         必要な粒度のところだけ触ればよい。
+
+         例）目盛りだけ暗く落として星を目立たせる:
+             --ink-l1-ticks: #6b5a1a;
+
+         パーツ名は SIGIL ARTWORK 側の data-part="..." と対応している */
+      --ink-l1-rings: var(--ink-l1); /* 四重円 */
+      --ink-l1-ticks: var(--ink-l1); /* 目盛り 72本 */
+      --ink-l1-runes: var(--ink-l1); /* ルーン 24文字 */
+
+      --ink-l2-rings: var(--ink-l2); /* 境界円（実線 2本 + 破線 1本） */
+      --ink-l2-star: var(--ink-l2); /* 八芒星（正方形 2枚） */
+      --ink-l2-nodes: var(--ink-l2); /* 頂点の小円 8個 + 十字 */
+
+      --ink-l3-rings: var(--ink-l3); /* 円 4本 + 放射線 12本 */
+      --ink-l3-pentagram: var(--ink-l3); /* ペンタグラム + 正五角形 */
+    }
+
+    /* ==========================================================
+       ★ FORM THEME（検索フォームのテーマ）… 触る場所
+       魔法陣とは独立した、黒 × 水色の配色
+       ========================================================== */
+    :root {
+      /* --- 基準になる 2 色（触るのは基本ここだけ） ---
+         強調色は「R G B の数値」だけを持たせておく。
+         こうしておくと rgb(... / 不透明度) の形で濃さ違いを作れるので、
+         --form-accent-rgb を変えればふち・文字・発光がまとめて追従する */
+      --form-accent-rgb: 95 216 255; /* 強調色 = 水色 #5fd8ff */
+      --form-base: #05070d; /* 下地の色 = 黒。入力欄の背景とボタンの文字色に使う */
+
+      /* --- 派生色 ---
+         rgb(R G B / A) の A は不透明度（0〜1）。
+         A を下げるほど背景に溶けて淡く見える。
+         数値を変えれば濃さだけを調整できる */
+
+      --form-accent: rgb(var(--form-accent-rgb)); /* そのままの強調色 */
+
+      /* 通常時のふち・プレースホルダー用に、濃さを落とした強調色 */
+      --form-accent-dim: rgb(var(--form-accent-rgb) / 0.55);
+
+      /* 発光（box-shadow）の色 */
+      --form-glow: rgb(var(--form-accent-rgb) / 0.35);
+      --form-glow-strong: rgb(var(--form-accent-rgb) / 0.45);
+
+      /* 発光のぼかし幅 */
+      --form-glow-blur: 12px;
+      --form-glow-blur-strong: 14px;
+
+      /* 入力欄の下地。透過させると背後の魔法陣が透けて文字が読みにくくなるため不透明にする */
+      --form-field-bg: var(--form-base);
+
+      --form-radius: 4px;
+    }
+
+    /* ----------------------------------------------------------
+       LAYOUT（土台）… 触らない場所
+       3 層を中央に重ねて正方形に保つための骨組み
+       ---------------------------------------------------------- */
+
+    /* 検索フォームを画面の中央に置く。魔法陣は下の #sigil-stack で
+       画面全体に固定するので、ここでの中央寄せはフォームのためのもの */
+    body {
+      margin: 0;
+      min-height: 100vh;
+      overflow: hidden;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: var(--sigil-bg);
+    }
+
+    /* 3 層を同じ中心（同じ軸）に重ねるためのスタック。
+       position: fixed + inset: 0 + margin: auto で画面中央に固定する。
+       z-index: 0 でフォーム（z-index: 1）の背面に、
+       pointer-events: none でクリックがフォームに素通りするようにする */
+    #sigil-stack {
+      position: fixed;
+      inset: 0;
+      margin: auto;
+      z-index: 0;
+      pointer-events: none;
+      width: var(--sigil-size);
+      aspect-ratio: 1 / 1; /* 正方形を保つ */
+    }
+
+    /* inset: 0 で 3 層すべてを親いっぱいに重ねる = 中心が完全に一致する。
+       visibility: hidden は、準備が終わるまで完成形をチラ見せしないための初期状態
+       （JS 側で準備完了後に visible へ切り替える） */
+    #sigil-stack > .layer {
+      position: absolute;
+      inset: 0;
+      visibility: hidden;
+    }
+
+    /* transform-origin で回転の軸を SVG の中心に固定する */
+    #sigil-stack svg {
+      display: block;
+      width: 100%;
+      height: 100%;
+      transform-origin: 50% 50%;
+    }
+
+    /* ----------------------------------------------------------
+       SEARCH FORM（検索フォーム）
+       魔法陣より手前（z-index: 1）に置く
+       ---------------------------------------------------------- */
+
+    form {
+      position: relative;
+      z-index: 1;
+      display: flex;
+      gap: 8px;
+    }
+
+    input[type="text"] {
+      width: min(320px, 60vw);
+      padding: 10px 14px;
+      font-size: 16px;
+      color: var(--form-accent);
+      background: var(--form-field-bg);
+      border: 1px solid var(--form-accent-dim);
+      border-radius: var(--form-radius);
+      outline: none;
+      transition: border-color 0.2s, box-shadow 0.2s;
+    }
+
+    input[type="text"]::placeholder {
+      color: var(--form-accent-dim);
+    }
+
+    /* フォーカス時はふちを強調色にして、外側にほのかな発光を足す */
+    input[type="text"]:focus {
+      border-color: var(--form-accent);
+      box-shadow: 0 0 var(--form-glow-blur) var(--form-glow);
+    }
+
+    button {
+      padding: 10px 20px;
+      font-size: 16px;
+      color: var(--form-base);
+      background: var(--form-accent);
+      border: none;
+      border-radius: var(--form-radius);
+      cursor: pointer;
+      transition: box-shadow 0.2s, filter 0.2s;
+    }
+
+    button:hover {
+      filter: brightness(1.15);
+      box-shadow: 0 0 var(--form-glow-blur-strong) var(--form-glow-strong);
+    }
+  </style>
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://unpkg.com/three@0.184.0/build/three.module.js",
+      "animejs": "https://unpkg.com/animejs@4.5.0/dist/modules/index.js",
+      "animejs/adapters/three": "https://unpkg.com/animejs@4.5.0/dist/modules/adapters/three/index.js"
+    }
+  }
+  </script>
+</head>
+<body>
+  <!-- ---- 検索フォーム（魔法陣より手前に表示される） ---- -->
+  <form action="https://www.google.com/search" method="GET">
+    <input type="text" name="q" placeholder="Google検索" autofocus>
+    <button type="submit">検索</button>
+  </form>
+
+
+  <script type="module">
+    import { animate, svg, stagger } from 'animejs';
+
+    // ==========================================================
+    //
+    //   ★★★ ハンズオンの進め方 ★★★
+    //
+    //   いまの状態: 検索フォームだけが表示される。
+    //              魔法陣の図形（ページ末尾の SIGIL ARTWORK）と CSS は
+    //              最初から書いてあるが、それを動かす JS の呼び出しを
+    //              すべてコメントアウトしてあるので、まだ何も見えない。
+    //
+    //   やること  : 下の SEQUENCE にある main() の中で、
+    //              STEP 1 → 2 → 3 → 4 の順にコメントを外していく。
+    //              手を動かすのは main() の中だけ。それ以外は触らなくてよい。
+    //
+    //   進め方    : 1 ステップ書き換えるたびに、ブラウザで
+    //              このファイルを開き直して（再読み込みして）変化を見る。
+    //
+    //     STEP 1 … 魔法陣を表示する           → 止まった魔法陣が出る
+    //     STEP 2 … 描画アニメの準備をする      → 魔法陣が消える
+    //     STEP 3 … 線を描く                   → 3 層が順番に描かれる
+    //     STEP 4 … 描き終わった層から回す      → 完成
+    //
+    //   完成形は 98-magic-circle-search.html。
+    //   詰まったとき・答え合わせをしたいときはそちらを開く。
+    //
+    // ==========================================================
+
+    // ==========================================================
+    //
+    //   ★ CONTROL PANEL（操作パネル）… 触る場所
+    //
+    //   アニメーションの変更は、原則このブロックの中だけで完結する
+    //     - SETTINGS  : 数値や色などの設定値
+    //     - SEQUENCE  : どの順番で何を実行するかの流れ
+    //
+    // ==========================================================
+
+    // ----------------------------------------------------------
+    // ★ SETTINGS（設定値）
+    //   数値をいじって見た目とタイミングを調整するところ
+    // ----------------------------------------------------------
+
+    // 全レイヤー共通の設定
+    const CONFIG = {
+      // 線が伸びるときの速度の緩急。
+      // 'inOut(2)' = ゆっくり始まって速くなり、最後はまたゆっくり止まる。
+      // 'linear' にすると最初から最後まで一定速度になる
+      drawEase: 'inOut(2)',
+
+      // 回転の速度カーブ。ずっと回り続けるので 'linear'（一定速度）が自然。
+      // ここを 'inOut(2)' などにすると 1 周ごとに加速・減速してぎこちなくなる
+      spinEase: 'linear',
+    };
+
+    // レイヤーごとの設定。
+    // 配列の並び順（1 番目・2 番目・3 番目）が、
+    // HTML の SIGIL ARTWORK にある data-layer="1" 〜 "3" に対応する
+    const LAYERS = [
+      {
+        // ↓ data-layer="1"（layer1-outer.svg 由来）の設定
+        order: 2,                 // 描かれる順番。小さいほど先に描かれ、0 が最初
+        gapToNext: 0,             // 自分が「描き始めて」から、次のレイヤーが描き始めるまでの間隔 (ms)
+                                  //   自分の drawDuration より小さい → 重なりながら描かれる
+                                  //   大きい → 自分が描き終わってから間を空けて次が描かれる
+                                  //
+                                  //   ※ 自分の開始時刻ではなく「次のレイヤーの開始時刻」を決める値。
+                                  //     order が先頭のレイヤーはページを開いた直後に描き始まり、
+                                  //     order が最後のレイヤーは「次」が無いのでこの値を使わない
+        drawDuration: 2000,       // このレイヤーを最初から最後まで描き切るのにかかる時間 (ms)
+        drawStagger: 8,           // レイヤー内の図形を 1 つずつズラして描く間隔 (ms)
+                                  //   0 にすると全図形が同時に描かれる。大きいほど 1 本ずつ順に描かれる
+        spinDuration: 40000,      // 1 回転にかかる時間 (ms)。大きいほどゆっくり回る
+        spinDirection: 1,         // 回転方向。1 = 時計回り / -1 = 反時計回り
+      },
+      {
+        // ↓ data-layer="2"（layer2-mid.svg 由来）の設定
+        order: 1,
+        gapToNext: 1200,
+        drawDuration: 1600,
+        drawStagger: 30,
+        spinDuration: 28000,
+        spinDirection: -1,
+      },
+      {
+        // ↓ data-layer="3"（layer3-core.svg 由来）の設定
+        order: 0,
+        gapToNext: 1000,
+        drawDuration: 700,
+        drawStagger: 40,
+        spinDuration: 18000,
+        spinDirection: 1,
+      },
+    ];
+
+    // ----------------------------------------------------------
+    // ★ SEQUENCE（実行の流れ）
+    //   「集める → 描く → 回す」の段取りを決めているところ。
+    //   この main() が実際に呼び出されるのは、ファイル末尾の START（起動）
+    // ----------------------------------------------------------
+
+    function main() {
+
+      // ======================================================
+      // ▼ STEP 1 ── 魔法陣を表示する
+      //
+      //   下の 1 行の先頭にある「// 」を消す（＝コメントを外す）。
+      //   HTML 内の SVG を集めて、そのまま画面に出すだけの状態。
+      //
+      //   → 完成形の魔法陣が、止まったまま表示される
+      // ======================================================
+
+      // showLayers(collectLayers());
+
+
+      // ======================================================
+      // ▼ STEP 2 ── 描画アニメーションの準備をする
+      //
+      //   STEP 1 の行を「// 」を付けて元に戻し、
+      //   代わりに下の 1 行のコメントを外す。
+      //   showLayers → prepareLayers に差し替えるということ。
+      //   prepareLayers は表示する前に、全部の線の長さを 0 にしておく。
+      //
+      //   → 魔法陣が消える。線の長さが 0 なので何も見えないだけで、
+      //     図形そのものは画面の上にちゃんと置かれている
+      // ======================================================
+
+      // const scenes = prepareLayers(collectLayers());
+
+
+      // ======================================================
+      // ▼ STEP 3 ── 線を描く
+      //
+      //   下のかたまり（let startAt 〜 } まで）のコメントをまとめて外す。
+      //
+      //   order の小さい順に開始時刻を決めていく。
+      //   先頭のレイヤーは 0ms（＝すぐ）から始め、
+      //   自分を仕込んだあとに自分の gapToNext を足して「次のレイヤーの開始時刻」を作る。
+      //   足し算で絶対的な時刻を求めてから全レイヤーをまとめて仕込むので、
+      //   setTimeout のようにタイミングのズレが積み重なることがない。
+      //
+      //   → 3 層が順番に描かれていく
+      // ======================================================
+
+      // let startAt = 0;
+
+      // for (const scene of [...scenes].sort((a, b) => a.order - b.order)) {
+      //    startDrawing(scene, startAt);
+
+      //    // 自分の値は自分のためではなく「次のレイヤー」のために足す
+      //    startAt += scene.gapToNext;
+      //  }
+
+
+      // ======================================================
+      // ▼ STEP 4 ── 描き終わった層から回し始める
+      //
+      //   STEP 3 の中にある
+      //       startDrawing(scene, startAt);
+      //   を、次のように書き換える。
+      //
+      //       startDrawing(scene, startAt).then(() => startSpinning(scene));
+      //
+      //   startDrawing は「描き終わったら教えてくれる」約束（Promise）を返すので、
+      //   .then(...) を付けると、描き終わった（.then）レイヤーから順に、
+      //   そのレイヤーだけ回転を始められる。
+      //
+      //   → 完成。98-magic-circle-search.html と同じ動きになる
+      // ======================================================
+
+    }
+
+    // ==========================================================
+    //
+    //   ENGINE（エンジン部）… 触らない場所
+    //
+    //   CONTROL PANEL の指示を実際の描画・回転に変換する部品たち
+    //     - CONSTANTS : 変更する必要のない固定値
+    //     - PARTS     : 収集・下準備・描画・回転の各処理
+    //
+    // ==========================================================
+
+    // ----------------------------------------------------------
+    // CONSTANTS（固定値）
+    // ----------------------------------------------------------
+
+    // anime.js の createDrawable で線を描くアニメーションにできるのは、
+    // 「線の長さ」を測れる（getTotalLength を持つ）図形だけ。
+    // text や image などはここに含めても動かないので除外している
+    const DRAWABLE_SHAPES = 'line, circle, ellipse, rect, polygon, polyline, path';
+
+    // ----------------------------------------------------------
+    // PARTS（処理の部品）
+    // ----------------------------------------------------------
+
+    // [1] HTML の SIGIL ARTWORK に書かれた SVG を集めてくる。
+    // 戻り値: 各レイヤーの { el: SVG要素, host: 置き場所の div } の配列（LAYERS と同じ並び順）
+    function collectLayers() {
+      const stack = document.querySelector('#sigil-stack');
+
+      return LAYERS.map((layer, index) => {
+        // data-layer は 1 から始まるので、配列の番号（0 始まり）に +1 する
+        const host = stack.querySelector(`.layer[data-layer="${index + 1}"]`);
+        const el = host.querySelector('svg');
+
+        // 親要素（#sigil-stack）のサイズに追従させるため、SVG 固有の width/height は外す
+        el.removeAttribute('width');
+        el.removeAttribute('height');
+
+        return { el, host };
+      });
+    }
+
+    // [2-a] STEP 1 専用。集めてきた SVG をそのまま表示するだけの関数。
+    // アニメーションは一切かけないので、完成形が止まった絵として出る。
+    // STEP 2 からは、この下の prepareLayers に役目を譲る
+    function showLayers(layers) {
+      layers.forEach(({ host }) => { host.style.visibility = 'visible'; });
+    }
+
+    // [2-b] 描画アニメーションの下準備。
+    // 全レイヤーの図形をあらかじめ「長さ 0」にしてから表示状態へ切り替える。
+    // こうしておくと、描画の順番待ちをしている間もその層の線は一切見えない
+    // （先に表示してしまうと、完成形が一瞬チラッと見えてしまう）
+    function prepareLayers(layers) {
+      return layers.map(({ el, host }, index) => {
+        const drawables = svg.createDrawable(el.querySelectorAll(DRAWABLE_SHAPES));
+        drawables.forEach((drawable) => { drawable.draw = '0 0'; }); // 長さ 0 = 何も見えない状態
+        host.style.visibility = 'visible';
+
+        // SVG 要素・描画対象・LAYERS の設定値をひとまとめにして扱いやすくする
+        return { el, drawables, ...LAYERS[index] };
+      });
+    }
+
+    // [3] 線画を描き出すアニメーション。
+    // startAt = 全体の開始時刻から数えて、このレイヤーが描き始める時刻 (ms)。
+    // 戻り値: 描き終わったときに解決される Promise
+    function startDrawing(scene, startAt) {
+      return animate(scene.drawables, {
+        draw: ['0 0', '0 1'], // 線の長さを 0% → 100% まで伸ばす
+        duration: scene.drawDuration,
+        // stagger の start でレイヤー全体の開始時刻を、
+        // stagger の第 1 引数でレイヤー内の図形どうしのズレを決める
+        delay: stagger(scene.drawStagger, { start: startAt }),
+        ease: CONFIG.drawEase,
+      });
+    }
+
+    // [4] 中心軸まわりに回し続けるアニメーション（無限ループ）。
+    function startSpinning(scene) {
+      animate(scene.el, {
+        rotate: scene.spinDirection * 360, // 正の値で時計回り、負の値で反時計回り
+        duration: scene.spinDuration,
+        loop: true, // 回り続ける
+        ease: CONFIG.spinEase,
+      });
+    }
+
+    // ----------------------------------------------------------
+    // START（起動）
+    // ----------------------------------------------------------
+
+    // JS は上から順に読み込まれるため、部品がすべて出そろったこの位置で
+    // SEQUENCE の main() を呼び出す。
+    //
+    // なお <script type="module"> は「HTML を全部読み終えてから実行される」
+    // という決まりになっているので、下にある SIGIL ARTWORK の SVG は
+    // main() が動く時点ですでに読み込み済み。順番の心配はいらない
+    main();
+  </script>
+
+  <!-- ==========================================================
+       SIGIL ARTWORK（図形データ）… 触らない場所
+
+       同じフォルダにある layer1-outer.svg / layer2-mid.svg /
+       layer3-core.svg の中身を、そのまま貼り付けたもの。
+       （描画に関係しない C2PA の metadata だけ取り除いてある）
+
+       図形そのものを描き変えたいときは、元の SVG ファイルを
+       編集してから、ここに貼り直す。
+       data-layer の番号は、JS の LAYERS 配列の並び順
+       （1 番目・2 番目・3 番目）に対応する。
+
+       各レイヤーの中は data-part="..." の <g> でパーツに分けてあり、
+       その <g> に color を指定することで、配下の図形だけ色が変わる
+       （図形は stroke="currentColor" で描かれているため）。
+       色の値そのものは THEME の --ink-* にまとめてあるので、
+       色を変えたいときはここではなく THEME を触る。
+
+       行数がとても多いので、読みやすさのために JS より後ろに置いてある。
+       （画面上の表示位置は CSS で中央寄せしているので、この順番でも
+        見た目は変わらない）
+       ========================================================== -->
+  <div id="sigil-stack">
+    <!-- ---- layer1 : layer1-outer.svg 由来 ---- -->
+    <div class="layer" data-layer="1">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 1000" width="1000" height="1000" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" style="color: var(--sigil-ink, #c9a227)">
+        <g id="sigil-outer">
+        <!-- 四重円 -->
+        <g data-part="rings" style="color: var(--ink-l1-rings)">
+        <circle cx="500" cy="500" r="480" stroke-width="1"/>
+        <circle cx="500" cy="500" r="458" stroke-width="2"/>
+        <circle cx="500" cy="500" r="400" stroke-width="1"/>
+        <circle cx="500" cy="500" r="382" stroke-width="2"/>
+        </g>
+        <!-- 目盛り 72本 / 5度刻み、30度毎は長い -->
+        <g data-part="ticks" style="color: var(--ink-l1-ticks)">
+        <line x1="500" y1="50" x2="500" y2="28" stroke-width="2"/>
+        <line x1="539.92" y1="43.74" x2="540.79" y2="33.78" stroke-width="1"/>
+        <line x1="579.53" y1="48.96" x2="581.27" y2="39.11" stroke-width="1"/>
+        <line x1="618.54" y1="57.61" x2="621.13" y2="47.95" stroke-width="1"/>
+        <line x1="656.65" y1="69.62" x2="660.07" y2="60.22" stroke-width="1"/>
+        <line x1="693.56" y1="84.91" x2="697.79" y2="75.85" stroke-width="1"/>
+        <line x1="725" y1="110.29" x2="736" y2="91.24" stroke-width="2"/>
+        <line x1="762.7" y1="124.83" x2="768.43" y2="116.64" stroke-width="1"/>
+        <line x1="794.4" y1="149.15" x2="800.82" y2="141.49" stroke-width="1"/>
+        <line x1="823.85" y1="176.15" x2="830.93" y2="169.07" stroke-width="1"/>
+        <line x1="850.85" y1="205.6" x2="858.51" y2="199.18" stroke-width="1"/>
+        <line x1="875.17" y1="237.3" x2="883.36" y2="231.57" stroke-width="1"/>
+        <line x1="889.71" y1="275" x2="908.76" y2="264" stroke-width="2"/>
+        <line x1="915.09" y1="306.44" x2="924.15" y2="302.21" stroke-width="1"/>
+        <line x1="930.38" y1="343.35" x2="939.78" y2="339.93" stroke-width="1"/>
+        <line x1="942.39" y1="381.46" x2="952.05" y2="378.87" stroke-width="1"/>
+        <line x1="951.04" y1="420.47" x2="960.89" y2="418.73" stroke-width="1"/>
+        <line x1="956.26" y1="460.08" x2="966.22" y2="459.21" stroke-width="1"/>
+        <line x1="950" y1="500" x2="972" y2="500" stroke-width="2"/>
+        <line x1="956.26" y1="539.92" x2="966.22" y2="540.79" stroke-width="1"/>
+        <line x1="951.04" y1="579.53" x2="960.89" y2="581.27" stroke-width="1"/>
+        <line x1="942.39" y1="618.54" x2="952.05" y2="621.13" stroke-width="1"/>
+        <line x1="930.38" y1="656.65" x2="939.78" y2="660.07" stroke-width="1"/>
+        <line x1="915.09" y1="693.56" x2="924.15" y2="697.79" stroke-width="1"/>
+        <line x1="889.71" y1="725" x2="908.76" y2="736" stroke-width="2"/>
+        <line x1="875.17" y1="762.7" x2="883.36" y2="768.43" stroke-width="1"/>
+        <line x1="850.85" y1="794.4" x2="858.51" y2="800.82" stroke-width="1"/>
+        <line x1="823.85" y1="823.85" x2="830.93" y2="830.93" stroke-width="1"/>
+        <line x1="794.4" y1="850.85" x2="800.82" y2="858.51" stroke-width="1"/>
+        <line x1="762.7" y1="875.17" x2="768.43" y2="883.36" stroke-width="1"/>
+        <line x1="725" y1="889.71" x2="736" y2="908.76" stroke-width="2"/>
+        <line x1="693.56" y1="915.09" x2="697.79" y2="924.15" stroke-width="1"/>
+        <line x1="656.65" y1="930.38" x2="660.07" y2="939.78" stroke-width="1"/>
+        <line x1="618.54" y1="942.39" x2="621.13" y2="952.05" stroke-width="1"/>
+        <line x1="579.53" y1="951.04" x2="581.27" y2="960.89" stroke-width="1"/>
+        <line x1="539.92" y1="956.26" x2="540.79" y2="966.22" stroke-width="1"/>
+        <line x1="500" y1="950" x2="500" y2="972" stroke-width="2"/>
+        <line x1="460.08" y1="956.26" x2="459.21" y2="966.22" stroke-width="1"/>
+        <line x1="420.47" y1="951.04" x2="418.73" y2="960.89" stroke-width="1"/>
+        <line x1="381.46" y1="942.39" x2="378.87" y2="952.05" stroke-width="1"/>
+        <line x1="343.35" y1="930.38" x2="339.93" y2="939.78" stroke-width="1"/>
+        <line x1="306.44" y1="915.09" x2="302.21" y2="924.15" stroke-width="1"/>
+        <line x1="275" y1="889.71" x2="264" y2="908.76" stroke-width="2"/>
+        <line x1="237.3" y1="875.17" x2="231.57" y2="883.36" stroke-width="1"/>
+        <line x1="205.6" y1="850.85" x2="199.18" y2="858.51" stroke-width="1"/>
+        <line x1="176.15" y1="823.85" x2="169.07" y2="830.93" stroke-width="1"/>
+        <line x1="149.15" y1="794.4" x2="141.49" y2="800.82" stroke-width="1"/>
+        <line x1="124.83" y1="762.7" x2="116.64" y2="768.43" stroke-width="1"/>
+        <line x1="110.29" y1="725" x2="91.24" y2="736" stroke-width="2"/>
+        <line x1="84.91" y1="693.56" x2="75.85" y2="697.79" stroke-width="1"/>
+        <line x1="69.62" y1="656.65" x2="60.22" y2="660.07" stroke-width="1"/>
+        <line x1="57.61" y1="618.54" x2="47.95" y2="621.13" stroke-width="1"/>
+        <line x1="48.96" y1="579.53" x2="39.11" y2="581.27" stroke-width="1"/>
+        <line x1="43.74" y1="539.92" x2="33.78" y2="540.79" stroke-width="1"/>
+        <line x1="50" y1="500" x2="28" y2="500" stroke-width="2"/>
+        <line x1="43.74" y1="460.08" x2="33.78" y2="459.21" stroke-width="1"/>
+        <line x1="48.96" y1="420.47" x2="39.11" y2="418.73" stroke-width="1"/>
+        <line x1="57.61" y1="381.46" x2="47.95" y2="378.87" stroke-width="1"/>
+        <line x1="69.62" y1="343.35" x2="60.22" y2="339.93" stroke-width="1"/>
+        <line x1="84.91" y1="306.44" x2="75.85" y2="302.21" stroke-width="1"/>
+        <line x1="110.29" y1="275" x2="91.24" y2="264" stroke-width="2"/>
+        <line x1="124.83" y1="237.3" x2="116.64" y2="231.57" stroke-width="1"/>
+        <line x1="149.15" y1="205.6" x2="141.49" y2="199.18" stroke-width="1"/>
+        <line x1="176.15" y1="176.15" x2="169.07" y2="169.07" stroke-width="1"/>
+        <line x1="205.6" y1="149.15" x2="199.18" y2="141.49" stroke-width="1"/>
+        <line x1="237.3" y1="124.83" x2="231.57" y2="116.64" stroke-width="1"/>
+        <line x1="275" y1="110.29" x2="264" y2="91.24" stroke-width="2"/>
+        <line x1="306.44" y1="84.91" x2="302.21" y2="75.85" stroke-width="1"/>
+        <line x1="343.35" y1="69.62" x2="339.93" y2="60.22" stroke-width="1"/>
+        <line x1="381.46" y1="57.61" x2="378.87" y2="47.95" stroke-width="1"/>
+        <line x1="420.47" y1="48.96" x2="418.73" y2="39.11" stroke-width="1"/>
+        <line x1="460.08" y1="43.74" x2="459.21" y2="33.78" stroke-width="1"/>
+        </g>
+        <!-- ルーン24文字 / 15度刻み、半径429 -->
+        <g data-part="runes" style="color: var(--ink-l1-runes)">
+        <g transform="translate(500,500) rotate(0) translate(0,-429) scale(1.35)"><line x1="-6" y1="-17" x2="-6" y2="17" stroke-width="1"/><line x1="-6" y1="-9" x2="6" y2="-17" stroke-width="1"/><line x1="-6" y1="1" x2="6" y2="-7" stroke-width="1"/></g>
+        <g transform="translate(500,500) rotate(15) translate(0,-429) scale(1.35)"><line x1="-6" y1="17" x2="-6" y2="-17" stroke-width="1"/><line x1="-6" y1="-17" x2="6" y2="-8" stroke-width="1"/><line x1="6" y1="-8" x2="6" y2="17" stroke-width="1"/></g>
+        <g transform="translate(500,500) rotate(30) translate(0,-429) scale(1.35)"><line x1="-6" y1="-17" x2="-6" y2="17" stroke-width="1"/><line x1="-6" y1="-8" x2="6" y2="0" stroke-width="1"/><line x1="6" y1="0" x2="-6" y2="8" stroke-width="1"/></g>
+        <g transform="translate(500,500) rotate(45) translate(0,-429) scale(1.35)"><line x1="-6" y1="-17" x2="-6" y2="17" stroke-width="1"/><line x1="-6" y1="-13" x2="6" y2="-5" stroke-width="1"/><line x1="-6" y1="-3" x2="6" y2="5" stroke-width="1"/></g>
+        <g transform="translate(500,500) rotate(60) translate(0,-429) scale(1.35)"><line x1="-6" y1="-17" x2="-6" y2="17" stroke-width="1"/><line x1="-6" y1="-17" x2="6" y2="-10" stroke-width="1"/><line x1="6" y1="-10" x2="-6" y2="-2" stroke-width="1"/><line x1="-6" y1="-1" x2="6" y2="17" stroke-width="1"/></g>
+        <g transform="translate(500,500) rotate(75) translate(0,-429) scale(1.35)"><line x1="6" y1="-17" x2="-6" y2="0" stroke-width="1"/><line x1="-6" y1="0" x2="6" y2="17" stroke-width="1"/></g>
+        <g transform="translate(500,500) rotate(90) translate(0,-429) scale(1.35)"><line x1="-8" y1="-17" x2="8" y2="17" stroke-width="1"/><line x1="8" y1="-17" x2="-8" y2="17" stroke-width="1"/></g>
+        <g transform="translate(500,500) rotate(105) translate(0,-429) scale(1.35)"><line x1="-6" y1="-17" x2="-6" y2="17" stroke-width="1"/><line x1="-6" y1="-17" x2="6" y2="-8" stroke-width="1"/><line x1="6" y1="-8" x2="-6" y2="0" stroke-width="1"/></g>
+        <g transform="translate(500,500) rotate(120) translate(0,-429) scale(1.35)"><line x1="-7" y1="-17" x2="-7" y2="17" stroke-width="1"/><line x1="7" y1="-17" x2="7" y2="17" stroke-width="1"/><line x1="-7" y1="-6" x2="7" y2="6" stroke-width="1"/></g>
+        <g transform="translate(500,500) rotate(135) translate(0,-429) scale(1.35)"><line x1="0" y1="-17" x2="0" y2="17" stroke-width="1"/><line x1="-8" y1="6" x2="8" y2="-6" stroke-width="1"/></g>
+        <g transform="translate(500,500) rotate(150) translate(0,-429) scale(1.35)"><line x1="0" y1="-17" x2="0" y2="17" stroke-width="1"/></g>
+        <g transform="translate(500,500) rotate(165) translate(0,-429) scale(1.35)"><line x1="-2" y1="-17" x2="6" y2="-9" stroke-width="1"/><line x1="6" y1="-9" x2="-2" y2="-1" stroke-width="1"/><line x1="2" y1="17" x2="-6" y2="9" stroke-width="1"/><line x1="-6" y1="9" x2="2" y2="1" stroke-width="1"/></g>
+        <g transform="translate(500,500) rotate(180) translate(0,-429) scale(1.35)"><line x1="0" y1="-13" x2="0" y2="13" stroke-width="1"/><line x1="0" y1="-13" x2="7" y2="-17" stroke-width="1"/><line x1="0" y1="13" x2="-7" y2="17" stroke-width="1"/></g>
+        <g transform="translate(500,500) rotate(195) translate(0,-429) scale(1.35)"><line x1="4" y1="-17" x2="-6" y2="-9" stroke-width="1"/><line x1="-6" y1="-9" x2="-6" y2="9" stroke-width="1"/><line x1="-6" y1="9" x2="4" y2="17" stroke-width="1"/></g>
+        <g transform="translate(500,500) rotate(210) translate(0,-429) scale(1.35)"><line x1="0" y1="-17" x2="0" y2="17" stroke-width="1"/><line x1="0" y1="1" x2="-8" y2="-12" stroke-width="1"/><line x1="0" y1="1" x2="8" y2="-12" stroke-width="1"/></g>
+        <g transform="translate(500,500) rotate(225) translate(0,-429) scale(1.35)"><line x1="6" y1="-17" x2="-5" y2="-6" stroke-width="1"/><line x1="-5" y1="-6" x2="5" y2="6" stroke-width="1"/><line x1="5" y1="6" x2="-6" y2="17" stroke-width="1"/></g>
+        <g transform="translate(500,500) rotate(240) translate(0,-429) scale(1.35)"><line x1="0" y1="17" x2="0" y2="-11" stroke-width="1"/><line x1="-7" y1="-7" x2="0" y2="-17" stroke-width="1"/><line x1="0" y1="-17" x2="7" y2="-7" stroke-width="1"/></g>
+        <g transform="translate(500,500) rotate(255) translate(0,-429) scale(1.35)"><line x1="-6" y1="-17" x2="-6" y2="17" stroke-width="1"/><line x1="-6" y1="-17" x2="6" y2="-11" stroke-width="1"/><line x1="6" y1="-11" x2="-6" y2="-2" stroke-width="1"/><line x1="-6" y1="-2" x2="6" y2="6" stroke-width="1"/><line x1="6" y1="6" x2="-6" y2="15" stroke-width="1"/></g>
+        <g transform="translate(500,500) rotate(270) translate(0,-429) scale(1.35)"><line x1="-7" y1="-17" x2="-7" y2="17" stroke-width="1"/><line x1="7" y1="-17" x2="7" y2="17" stroke-width="1"/><line x1="-7" y1="-17" x2="0" y2="-6" stroke-width="1"/><line x1="0" y1="-6" x2="7" y2="-17" stroke-width="1"/></g>
+        <g transform="translate(500,500) rotate(285) translate(0,-429) scale(1.35)"><line x1="-7" y1="-17" x2="-7" y2="17" stroke-width="1"/><line x1="7" y1="-17" x2="7" y2="17" stroke-width="1"/><line x1="-7" y1="-17" x2="7" y2="-2" stroke-width="1"/><line x1="7" y1="-17" x2="-7" y2="-2" stroke-width="1"/></g>
+        <g transform="translate(500,500) rotate(300) translate(0,-429) scale(1.35)"><line x1="-4" y1="-17" x2="-4" y2="17" stroke-width="1"/><line x1="-4" y1="-17" x2="6" y2="-8" stroke-width="1"/></g>
+        <g transform="translate(500,500) rotate(315) translate(0,-429) scale(1.35)"><line x1="0" y1="-12" x2="8" y2="0" stroke-width="1"/><line x1="8" y1="0" x2="0" y2="12" stroke-width="1"/><line x1="0" y1="12" x2="-8" y2="0" stroke-width="1"/><line x1="-8" y1="0" x2="0" y2="-12" stroke-width="1"/></g>
+        <g transform="translate(500,500) rotate(330) translate(0,-429) scale(1.35)"><line x1="-8" y1="-17" x2="-8" y2="17" stroke-width="1"/><line x1="8" y1="-17" x2="8" y2="17" stroke-width="1"/><line x1="-8" y1="-17" x2="8" y2="17" stroke-width="1"/><line x1="-8" y1="17" x2="8" y2="-17" stroke-width="1"/></g>
+        <g transform="translate(500,500) rotate(345) translate(0,-429) scale(1.35)"><line x1="0" y1="-17" x2="8" y2="-8" stroke-width="1"/><line x1="8" y1="-8" x2="0" y2="1" stroke-width="1"/><line x1="0" y1="1" x2="-8" y2="-8" stroke-width="1"/><line x1="-8" y1="-8" x2="0" y2="-17" stroke-width="1"/><line x1="0" y1="1" x2="-8" y2="17" stroke-width="1"/><line x1="0" y1="1" x2="8" y2="17" stroke-width="1"/></g>
+        </g>
+        </g>
+      </svg>
+    </div>
+
+    <!-- ---- layer2 : layer2-mid.svg 由来 ---- -->
+    <div class="layer" data-layer="2">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 1000" width="1000" height="1000" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" style="color: var(--sigil-ink, #c9a227)">
+        <g id="sigil-mid">
+        <!-- 境界円 -->
+        <g data-part="rings" style="color: var(--ink-l2-rings)">
+        <circle cx="500" cy="500" r="350" stroke-width="2"/>
+        <circle cx="500" cy="500" r="175" stroke-width="1"/>
+        <circle cx="500" cy="500" r="250" stroke-width="1" stroke-dasharray="14 10"/>
+        </g>
+        <!-- 八芒星（正方形2枚 / 外接円350） -->
+        <g data-part="star" style="color: var(--ink-l2-star)">
+        <polygon points="500,150 850,500 500,850 150,500" stroke-width="2"/>
+        <polygon points="747.49,252.51 747.49,747.49 252.51,747.49 252.51,252.51" stroke-width="2"/>
+        </g>
+        <!-- 頂点の小円と十字 -->
+        <g data-part="nodes" style="color: var(--ink-l2-nodes)">
+        <circle cx="500" cy="150" r="18" stroke-width="1"/>
+        <line x1="500" y1="158" x2="500" y2="142" stroke-width="1"/>
+        <line x1="492" y1="150" x2="508" y2="150" stroke-width="1"/>
+        <circle cx="747.49" cy="252.51" r="18" stroke-width="1"/>
+        <line x1="741.83" y1="258.17" x2="753.15" y2="246.85" stroke-width="1"/>
+        <line x1="741.83" y1="246.85" x2="753.15" y2="258.17" stroke-width="1"/>
+        <circle cx="850" cy="500" r="18" stroke-width="1"/>
+        <line x1="842" y1="500" x2="858" y2="500" stroke-width="1"/>
+        <line x1="850" y1="492" x2="850" y2="508" stroke-width="1"/>
+        <circle cx="747.49" cy="747.49" r="18" stroke-width="1"/>
+        <line x1="741.83" y1="741.83" x2="753.15" y2="753.15" stroke-width="1"/>
+        <line x1="741.83" y1="753.15" x2="753.15" y2="741.83" stroke-width="1"/>
+        <circle cx="500" cy="850" r="18" stroke-width="1"/>
+        <line x1="500" y1="842" x2="500" y2="858" stroke-width="1"/>
+        <line x1="508" y1="850" x2="492" y2="850" stroke-width="1"/>
+        <circle cx="252.51" cy="747.49" r="18" stroke-width="1"/>
+        <line x1="258.17" y1="741.83" x2="246.85" y2="753.15" stroke-width="1"/>
+        <line x1="246.85" y1="741.83" x2="258.17" y2="753.15" stroke-width="1"/>
+        <circle cx="150" cy="500" r="18" stroke-width="1"/>
+        <line x1="142" y1="500" x2="158" y2="500" stroke-width="1"/>
+        <line x1="150" y1="492" x2="150" y2="508" stroke-width="1"/>
+        <circle cx="252.51" cy="252.51" r="18" stroke-width="1"/>
+        <line x1="258.17" y1="258.17" x2="246.85" y2="246.85" stroke-width="1"/>
+        <line x1="246.85" y1="258.17" x2="258.17" y2="246.85" stroke-width="1"/>
+        </g>
+        </g>
+      </svg>
+    </div>
+
+    <!-- ---- layer3 : layer3-core.svg 由来 ---- -->
+    <div class="layer" data-layer="3">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 1000" width="1000" height="1000" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" style="color: var(--sigil-ink, #c9a227)">
+        <g id="sigil-core">
+        <g data-part="rings" style="color: var(--ink-l3-rings)">
+        <!-- 不透明な下地：真下の中間層を隠して線の交差を防ぐ -->
+        <circle cx="500" cy="500" r="240" stroke-width="3.5"/>
+        <circle cx="500" cy="500" r="195" stroke-width="1"/>
+        <circle cx="500" cy="500" r="180" stroke-width="1"/>
+        <circle cx="500" cy="500" r="150" stroke-width="1"/>
+        <!-- 放射線 12方向 -->
+        <line x1="551.25" y1="308.75" x2="561.34" y2="271.08" stroke-width="1"/>
+        <line x1="640.01" y1="359.99" x2="667.58" y2="332.42" stroke-width="1"/>
+        <line x1="691.25" y1="448.75" x2="728.92" y2="438.66" stroke-width="1"/>
+        <line x1="691.25" y1="551.25" x2="728.92" y2="561.34" stroke-width="1"/>
+        <line x1="640.01" y1="640.01" x2="667.58" y2="667.58" stroke-width="1"/>
+        <line x1="551.25" y1="691.25" x2="561.34" y2="728.92" stroke-width="1"/>
+        <line x1="448.75" y1="691.25" x2="438.66" y2="728.92" stroke-width="1"/>
+        <line x1="359.99" y1="640.01" x2="332.42" y2="667.58" stroke-width="1"/>
+        <line x1="308.75" y1="551.25" x2="271.08" y2="561.34" stroke-width="1"/>
+        <line x1="308.75" y1="448.75" x2="271.08" y2="438.66" stroke-width="1"/>
+        <line x1="359.99" y1="359.99" x2="332.42" y2="332.42" stroke-width="1"/>
+        <line x1="448.75" y1="308.75" x2="438.66" y2="271.08" stroke-width="1"/>
+        </g>
+        <g data-part="pentagram" style="color: var(--ink-l3-pentagram)">
+        <!-- ペンタグラム（頂点上） -->
+        <polygon points="500,350 588.17,621.35 357.34,453.65 642.66,453.65 411.83,621.35" stroke-width="2"/>
+        <!-- ペンタグラムの頂点を通る正五角形 -->
+        <polygon points="500,350 642.66,453.65 588.17,621.35 411.83,621.35 357.34,453.65" stroke-width="1.5"/>
+        </g>
+        </g>
+      </svg>
+    </div>
+  </div>
+</body>
+</html>
