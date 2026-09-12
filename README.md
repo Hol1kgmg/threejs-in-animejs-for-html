@@ -4,6 +4,8 @@
 `examples/` 配下に、anime.js を使わない場合との比較や基本的な使い方、
 応用的な表現のデモをHTMLファイル単位で分けて用意しています。
 
+![anime.js × three.js のブラウザ動作デモ](./src/animejs-for-threejs-at-browser.gif)
+
 | ファイル | 内容 |
 | --- | --- |
 | [examples/00-introduction.html](./examples/00-introduction.html) | anime.js を使った最小限のコード例 |
