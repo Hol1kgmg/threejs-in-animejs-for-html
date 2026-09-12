@@ -1,0 +1,22 @@
+このフォルダはanime.jsというUIライブラリを使って楽しいことをしようというハンズオン資料です
+
+【フォルダ構成】
+codes/   # 使用するコード
+docs/    # 説明資料
+
+
+【今回使うツール・アプリ】
+VSCode
+WEBブラウザのアプリ(Google ChromeやEdgeなど)
+
+
+【扱うプログラミング言語】
+HTML
+CSS
+JavaScript
+Markdown
+
+
+【Githubを使える方向けの案内】
+コードはこちらで公開されています
+https://github.com/Hol1kgmg/threejs-in-animejs-for-html
