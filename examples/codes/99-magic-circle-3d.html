@@ -224,7 +224,7 @@
 
 
   <script type="module">
-    import { animate, svg, stagger } from 'animejs';
+    import { animate, createTimer, svg, stagger, utils } from 'animejs';
 
     // three.js 本体から、3D 空間を組み立てるのに最低限必要な 3 つだけを取り込む。
     //   Scene            : 物を置く「空間」そのもの
@@ -330,7 +330,7 @@
       {
         // ↓ data-layer="2"（layer2-mid.svg 由来）の設定
         order: 1,
-        gapToNext: 1000,
+        gapToNext: 1500,
         drawDuration: 1600,
         drawStagger: 30,
         spinDuration: 28000,
@@ -412,10 +412,9 @@
     // CSS3D の世界では 1px = 3D 空間の 1 単位なので、この 3 つは必ず揃える
     const SIGIL_SIZE = 1000;
 
-    // three.js の角度はラジアン（1 周 = 2π）で指定する決まりなので、
+    // Math.tan などの三角関数はラジアン（1 周 = 2π）で角度を受け取るので、
     // CONTROL PANEL に度で書いた値をこれで変換する。
-    // ※ anime.js の rotateZ は度のまま書ける（アダプターが変換してくれる）ので、
-    //    この関数が要るのは three.js を直接触るところだけ
+    // ※ anime.js の rotateX / rotateZ は度のまま書ける（アダプターが変換してくれる）
     const toRadians = (degrees) => degrees * Math.PI / 180;
 
     // ----------------------------------------------------------
@@ -433,8 +432,7 @@
       // カメラの方を動かすのではなく、この塊ごと傾けることで
       // 魔法陣の中心が画面のど真ん中から動かないようにしている
       const root = new Group();
-      root.rotation.x = toRadians(CAMERA.tiltX);
-      root.rotation.y = toRadians(CAMERA.tiltY);
+      utils.set(root, { rotateX: CAMERA.tiltX, rotateY: CAMERA.tiltY });
       world.add(root);
 
       // CSS3DRenderer は自前の div を作るので、それを #sigil-stage に差し込む
@@ -458,17 +456,16 @@
       const height = window.innerHeight;
 
       stage.renderer.setSize(width, height);
-      stage.camera.aspect = width / height;
 
       // カメラから距離 d の位置に見える縦幅は 2 * d * tan(fov / 2) で決まる。
       // 「魔法陣（SIGIL_SIZE）を画面の短い辺の screenRatio 倍の大きさで映したい」
       // という条件から、必要な縦幅 → 必要な距離 d の順に逆算する
       const targetSizeOnScreen = CAMERA.screenRatio * Math.min(width, height);
       const visibleHeight = SIGIL_SIZE * height / targetSizeOnScreen;
-      stage.camera.position.z = visibleHeight / (2 * Math.tan(toRadians(CAMERA.fov) / 2));
 
-      // fov / aspect / position を変えたら、カメラに計算し直させる必要がある
-      stage.camera.updateProjectionMatrix();
+      utils.set(stage.camera, {
+        z: visibleHeight / (2 * Math.tan(toRadians(CAMERA.fov) / 2)),
+      });
     }
 
     // [1] HTML の SIGIL ARTWORK に書かれた SVG を集めてくる。
@@ -501,13 +498,14 @@
       const mounted = collectLayers().map((layer, index) => {
         const obj = new CSS3DObject(layer.host);
 
-        // 奥行きの位置。CONTROL PANEL の depth をそのまま z 座標として使う
-        obj.position.z = LAYERS[index].depth;
-
-        // このレイヤーだけの拡大率。
-        // setScalar は「x / y / z の 3 方向に同じ値を入れる」という意味で、
-        // 縦横の比率を保ったまま大きさだけを変えられる
-        obj.scale.setScalar(LAYERS[index].size);
+        // utils.set = アニメーションさせず、今すぐその値にする命令。
+        //   z     : 奥行きの位置。CONTROL PANEL の depth をそのまま使う
+        //   scale : 縦横の比率を保ったまま、このレイヤーだけ大きさを変える。
+        //           0 にするとそのレイヤーは表示されなくなる
+        utils.set(obj, {
+          z: LAYERS[index].depth,
+          scale: LAYERS[index].size,
+        });
 
         stage.root.add(obj);
 
@@ -569,14 +567,16 @@
 
     // [5] 3D 空間を毎フレーム描き直し続ける。
     // anime.js が動かしているのはあくまで「オブジェクトが持つ数値」なので、
-    // それを画面に反映するには、こうして描画を回し続ける必要がある
+    // それを画面に反映するには、こうして描画を回し続ける必要がある。
+    //
+    // createTimer は「毎フレーム呼ばれる、終わらないタイマー」。
+    // duration を書かなければ無限に回り続ける。
+    // anime.js がアニメーションのために元々回しているループに相乗りする形なので、
+    // 自前で requestAnimationFrame を回すより毎フレームの処理が 1 本で済む
     function startRenderLoop(stage) {
-      const tick = () => {
-        stage.renderer.render(stage.world, stage.camera);
-        requestAnimationFrame(tick); // 次のフレームでもう一度自分を呼ぶ
-      };
-
-      tick();
+      createTimer({
+        onUpdate: () => stage.renderer.render(stage.world, stage.camera),
+      });
     }
 
     // ----------------------------------------------------------
